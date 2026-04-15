@@ -87,7 +87,7 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.uid == request.auth.uid &&
-             data.email is string && isValidEmail(data.email) &&
+             (!('email' in data) || data.email == null || (data.email is string && isValidEmail(data.email))) &&
              (!('points' in data) || data.points is number) &&
              (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
@@ -113,7 +113,7 @@ service cloud.firestore {
 
     function isValidCommunityPost(data) {
       return data.userId == request.auth.uid &&
-             data.userEmail is string && isValidEmail(data.userEmail) &&
+             (!('userEmail' in data) || data.userEmail == null || (data.userEmail is string && isValidEmail(data.userEmail))) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.description is string && data.description.size() < 2000 &&
              data.tags is list && data.tags.size() < 20 &&

@@ -31,8 +31,11 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signInAnonymously,
   onAuthStateChanged, 
   signOut, 
   User 
@@ -51,7 +54,9 @@ import {
   writeBatch,
   increment,
   limit,
-  setDoc
+  setDoc,
+  getDoc,
+  getDocs
 } from 'firebase/firestore';
 import { format, addDays, differenceInDays, isPast } from 'date-fns';
 import { toast, Toaster } from 'sonner';
@@ -94,13 +99,65 @@ interface FoodItem {
 
 // --- Components ---
 
-const AuthScreen = ({ onLogin }: { onLogin: () => void }) => {
+const AuthScreen = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleLoginClick = async () => {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsLoggingIn(true);
     try {
-      await onLogin();
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, email, password);
+        toast.success('Account created successfully!');
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success('Welcome back to Vegie365!');
+      }
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/operation-not-allowed') {
+        toast.error('Email/Password login is not enabled. Please enable it in the Firebase Console under Authentication > Sign-in method.');
+      } else if (error.code === 'auth/email-already-in-use') {
+        toast.error('This email is already registered. Please sign in instead.');
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        toast.error('Invalid email or password.');
+      } else {
+        toast.error(error.message || 'Authentication failed. Please try again.');
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoggingIn(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      toast.success('Welcome to Vegie365!');
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/popup-blocked') {
+        toast.error('Sign-in popup was blocked. Please allow popups for this site and try again.');
+      } else if (error.code !== 'auth/cancelled-popup-request') {
+        toast.error('Failed to sign in with Google.');
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setIsLoggingIn(true);
+    try {
+      await signInAnonymously(auth);
+      toast.success('Welcome! You are browsing as a guest.');
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Failed to continue as guest.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -111,25 +168,92 @@ const AuthScreen = ({ onLogin }: { onLogin: () => void }) => {
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full text-center space-y-8"
+        className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-xl border border-border"
       >
-        <div className="flex justify-center">
-          <div className="w-20 h-20 bg-emerald-600 rounded-3xl flex items-center justify-center shadow-xl shadow-emerald-200">
-            <Refrigerator className="text-white w-10 h-10" />
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 bg-[#284134] rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
+            <Refrigerator className="text-white w-8 h-8" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-ink">Vegie365</h1>
+          <p className="text-sm text-muted-foreground">Smart food tracking for a sustainable household.</p>
+        </div>
+        
+        <form onSubmit={handleAuth} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input 
+              id="email" 
+              type="email" 
+              placeholder="you@example.com" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required 
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input 
+              id="password" 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required 
+            />
+          </div>
+          <Button 
+            type="submit"
+            disabled={isLoggingIn}
+            className="w-full h-12 text-lg bg-[#284134] hover:bg-[#284134]/90 text-white rounded-xl transition-all"
+          >
+            {isLoggingIn ? <RefreshCw className="w-5 h-5 animate-spin mr-2" /> : null}
+            {isLoggingIn ? 'Authenticating...' : (isSignUp ? 'Create Account' : 'Sign In')}
+          </Button>
+        </form>
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-muted-foreground">Or continue with</span>
           </div>
         </div>
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight text-ink">Vegie365</h1>
-          <p className="text-muted-foreground">Smart food tracking for a sustainable household.</p>
+
+        <div className="flex flex-col gap-3">
+          <Button 
+            variant="outline" 
+            onClick={handleGoogleLogin}
+            disabled={isLoggingIn}
+            className="w-full h-12 text-base font-medium rounded-xl"
+          >
+            <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Google
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={handleGuestLogin}
+            disabled={isLoggingIn}
+            className="w-full h-12 text-base font-medium rounded-xl text-muted-foreground"
+          >
+            <Users className="w-5 h-5 mr-2" />
+            Guest (24h Session)
+          </Button>
         </div>
-        <Button 
-          onClick={handleLoginClick}
-          disabled={isLoggingIn}
-          className="w-full h-12 text-lg bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl transition-all"
-        >
-          {isLoggingIn ? <RefreshCw className="w-5 h-5 animate-spin mr-2" /> : null}
-          {isLoggingIn ? 'Signing in...' : 'Sign in with Google'}
-        </Button>
+
+        <div className="text-center mt-4">
+          <button 
+            type="button" 
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="text-sm text-[#284134] hover:underline font-medium"
+          >
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
+        </div>
       </motion.div>
     </div>
   );
@@ -200,6 +324,34 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    // Handle anonymous user 24-hour expiry
+    if (user.isAnonymous) {
+      const userDocRef = doc(db, 'users', user.uid);
+      getDoc(userDocRef).then(async (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.createdAt) {
+            const createdTime = data.createdAt.toDate().getTime();
+            const now = Date.now();
+            if (now - createdTime > 24 * 60 * 60 * 1000) {
+              // Older than 24 hours, delete inventory data and reset timer
+              try {
+                const invRef = collection(db, 'users', user.uid, 'inventory');
+                const invSnap = await getDocs(invRef);
+                const batch = writeBatch(db);
+                invSnap.forEach(d => batch.delete(d.ref));
+                batch.update(userDocRef, { createdAt: serverTimestamp(), points: 0 });
+                await batch.commit();
+                toast.info('Your 24-hour guest session expired. Your inventory has been reset.');
+              } catch (err) {
+                console.error("Failed to reset guest data:", err);
+              }
+            }
+          }
+        }
+      });
+    }
+
     // Listen to user points
     const userDocRef = doc(db, 'users', user.uid);
     const unsubPoints = onSnapshot(userDocRef, (docSnap) => {
@@ -216,7 +368,7 @@ export default function App() {
       } else {
         setDoc(userDocRef, { 
           uid: user.uid,
-          email: user.email,
+          email: user.email || null,
           points: 0,
           createdAt: serverTimestamp()
         }, { merge: true });
@@ -268,23 +420,6 @@ export default function App() {
 
     return unsubscribe;
   }, [user]);
-
-  const handleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      toast.success('Welcome to Vegie365!');
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === 'auth/popup-blocked') {
-        toast.error('Sign-in popup was blocked. Please allow popups for this site and try again.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        // Ignore this as it's usually handled by the loading state
-      } else {
-        toast.error('Failed to sign in. Please try again.');
-      }
-    }
-  };
 
   const handleLogout = () => signOut(auth);
 
@@ -527,7 +662,7 @@ export default function App() {
 
         await addDoc(collection(db, 'community_posts'), {
           userId: user.uid,
-          userEmail: user.email,
+          userEmail: user.email || null,
           title: listing.listing_title,
           description: listing.listing_description,
           tags: listing.suggested_tags,
@@ -589,7 +724,7 @@ export default function App() {
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-bg"><RefreshCw className="animate-spin text-accent" /></div>;
-  if (!user) return <AuthScreen onLogin={handleLogin} />;
+  if (!user) return <AuthScreen />;
 
   const filteredInventory = inventory
     .filter(item => {

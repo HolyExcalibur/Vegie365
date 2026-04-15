@@ -27,7 +27,9 @@ import {
   Trophy,
   Share2,
   LayoutGrid,
-  List
+  List,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -290,6 +292,7 @@ export default function App() {
   const [processedRecipe, setProcessedRecipe] = useState<CommunityRecipeResult | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -756,13 +759,21 @@ export default function App() {
       <Toaster position="top-center" />
       
       {/* Header */}
-      <header className="bg-white border-b border-border px-5 py-3 flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-8">
+      <header className="bg-white border-b border-border px-5 py-3 flex justify-between items-center shrink-0 relative z-50">
+        <div className="flex items-center gap-4 md:gap-8">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="md:hidden -ml-2"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          >
+            {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </Button>
           <div className="font-bold tracking-tight text-lg flex items-center gap-2" style={{ color: '#284134' }}>
-            Vegie365 <span className="bg-[#284134] text-white px-1.5 py-0.5 rounded text-[10px] font-mono">v2.1-AI</span>
+            Vegie365 <span className="bg-[#284134] text-white px-1.5 py-0.5 rounded text-[10px] font-mono hidden sm:inline-block">v2.1-AI</span>
           </div>
 
-          <nav className="flex items-center gap-1">
+          <nav className="hidden md:flex items-center gap-1">
             <button 
               onClick={() => setCurrentView('inventory')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${currentView === 'inventory' ? 'bg-[#284134] text-white' : 'text-muted-foreground hover:text-ink hover:bg-bg'}`}
@@ -779,7 +790,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-muted-foreground text-[11px] hidden md:block">
-            {inventory.length} Items Tracked &nbsp; | &nbsp; {user.email}
+            {inventory.length} Items Tracked &nbsp; | &nbsp; {user.email || 'Guest'}
           </div>
           <Button variant="ghost" size="icon" onClick={handleLogout} className="h-8 w-8 text-muted-foreground hover:text-ink">
             <LogOut className="w-4 h-4" />
@@ -787,11 +798,40 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden relative">
+        {/* Mobile Navigation Overlay */}
+        <AnimatePresence>
+          {isSidebarOpen && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/20 z-40 md:hidden"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+
         {currentView === 'inventory' ? (
-          <div className="h-full grid grid-cols-[240px_1fr_320px] overflow-hidden">
+          <div className="h-full flex flex-col md:grid md:grid-cols-[240px_1fr] lg:grid-cols-[240px_1fr_320px] overflow-hidden">
             {/* Sidebar */}
-            <aside className="border-r border-border bg-[#f9fafb] p-4 flex flex-col gap-6 overflow-y-auto">
+            <aside className={`absolute md:relative z-50 w-[240px] h-full border-r border-border bg-[#f9fafb] p-4 flex flex-col gap-6 overflow-y-auto transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+              <div className="md:hidden mb-4">
+                <nav className="flex flex-col gap-2">
+                  <button 
+                    onClick={() => { setCurrentView('inventory'); setIsSidebarOpen(false); }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium text-left transition-colors ${currentView === 'inventory' ? 'bg-[#284134] text-white' : 'text-muted-foreground hover:text-ink hover:bg-bg'}`}
+                  >
+                    Home
+                  </button>
+                  <button 
+                    onClick={() => { setCurrentView('community'); setIsSidebarOpen(false); }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium text-left transition-colors ${currentView === 'community' ? 'bg-[#284134] text-white' : 'text-muted-foreground hover:text-ink hover:bg-bg'}`}
+                  >
+                    Community
+                  </button>
+                </nav>
+              </div>
               <div>
                 <p className="section-label">Storage Zones</p>
                 <div className={`nav-item cursor-pointer text-ink ${activeTab === 'all' ? 'active' : ''}`} onClick={() => { setActiveTab('all'); }}>
@@ -837,14 +877,6 @@ export default function App() {
               </div>
 
               <div className="mt-auto space-y-4">
-                <div className="bg-[#284134]/5 p-3 rounded-lg border border-[#284134]/10">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase font-bold text-[#284134]">Your Impact</span>
-                    <Trophy className="w-3 h-3 text-[#284134]" />
-                  </div>
-                  <div className="text-xl font-bold text-ink">{userPoints} pts</div>
-                  <div className="text-[10px] text-muted-foreground">Zero Waste Score</div>
-                </div>
                 <div className="ai-bubble text-[11px] mt-0">
                   <strong>Storage Tip:</strong> {storageTips[currentTipIndex]}
                 </div>
@@ -929,20 +961,22 @@ export default function App() {
                     </button>
                   </th>
                   <th className="text-[10px] uppercase text-muted-foreground p-3 px-4 border-b border-border font-semibold">
-                    <div className="flex items-center gap-2">
-                      Location
+                    Location
+                  </th>
+                  <th className="text-[10px] uppercase text-muted-foreground p-3 px-4 border-b border-border font-semibold text-right">
+                    <div className="flex flex-col items-end gap-1">
+                      <span>Actions</span>
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         onClick={handleRemoveAll}
                         disabled={inventory.length === 0 || isDeletingAll}
-                        className="h-6 text-[9px] text-warn hover:bg-red-50 px-1.5"
+                        className="h-6 text-[9px] text-[#00072D] hover:bg-slate-100 px-1.5"
                       >
                         {isDeletingAll ? <RefreshCw className="w-3 h-3 animate-spin" /> : 'Remove All'}
                       </Button>
                     </div>
                   </th>
-                  <th className="text-[10px] uppercase text-muted-foreground p-3 px-4 border-b border-border font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1019,9 +1053,9 @@ export default function App() {
                           </div>
                         </td>
                         <td className="p-3 px-4 border-b border-bg align-middle text-right">
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-end gap-1">
                             <DropdownMenu>
-                              <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 text-accent" />}>
+                              <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 text-[#00072D] hover:bg-slate-100" />}>
                                 <CheckCircle2 className="w-4 h-4" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
@@ -1043,7 +1077,7 @@ export default function App() {
                               variant="ghost" 
                               size="icon" 
                               onClick={() => handleDelete(item.id)}
-                              className="h-8 w-8 text-warn hover:bg-red-50"
+                              className="h-8 w-8 text-[#00072D] hover:bg-slate-100"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -1063,7 +1097,7 @@ export default function App() {
         </section>
 
             {/* Insight Panel */}
-            <aside className="border-l border-border bg-white flex flex-col h-full overflow-hidden">
+            <aside className="hidden lg:flex border-l border-border bg-white flex-col h-full overflow-hidden">
               <div className="bg-ink text-white p-5 h-[180px] shrink-0">
                 <p className="section-label" style={{ color: '#e5e5e5' }}>Task Engine: Extraction</p>
                 <div className="console-line" style={{ color: '#e5e5e5' }}>&gt; Listening for input...</div>
@@ -1144,9 +1178,25 @@ export default function App() {
           </aside>
         </div>
         ) : (
-          <div className="h-full flex overflow-hidden">
+          <div className="h-full flex flex-col md:flex-row overflow-hidden">
             {/* Community Sidebar */}
-            <aside className="w-[240px] border-r border-border bg-[#f9fafb] p-4 flex flex-col gap-6 overflow-y-auto">
+            <aside className={`absolute md:relative z-50 w-[240px] h-full border-r border-border bg-[#f9fafb] p-4 flex flex-col gap-6 overflow-y-auto transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+              <div className="md:hidden mb-4">
+                <nav className="flex flex-col gap-2">
+                  <button 
+                    onClick={() => { setCurrentView('inventory'); setIsSidebarOpen(false); }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium text-left transition-colors ${currentView === 'inventory' ? 'bg-[#284134] text-white' : 'text-muted-foreground hover:text-ink hover:bg-bg'}`}
+                  >
+                    Home
+                  </button>
+                  <button 
+                    onClick={() => { setCurrentView('community'); setIsSidebarOpen(false); }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium text-left transition-colors ${currentView === 'community' ? 'bg-[#284134] text-white' : 'text-muted-foreground hover:text-ink hover:bg-bg'}`}
+                  >
+                    Community
+                  </button>
+                </nav>
+              </div>
               <div className="bg-[#284134]/5 p-3 rounded-lg border border-[#284134]/10">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] uppercase font-bold text-[#284134]">Your Impact</span>

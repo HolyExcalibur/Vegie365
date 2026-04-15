@@ -7,7 +7,7 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     // ADD THIS LINE BELOW:
-    base: '/', 
+    base: '/Vegie365/', 
     
     plugins: [react(), tailwindcss()],
     define: {

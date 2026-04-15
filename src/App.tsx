@@ -30,13 +30,16 @@ import {
   List
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut, 
-  User 
-} from 'firebase/auth';
+import {
+  login as netlifyLogin,
+  signup as netlifySignup,
+  logout as netlifyLogout,
+  getUser as netlifyGetUser,
+  onAuthChange,
+  handleAuthCallback,
+  AuthError,
+  AUTH_EVENTS,
+} from '@netlify/identity';
 import { 
   collection, 
   onSnapshot, 
@@ -56,7 +59,7 @@ import {
 import { format, addDays, differenceInDays, isPast } from 'date-fns';
 import { toast, Toaster } from 'sonner';
 
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { db, handleFirestoreError, OperationType } from './firebase';
 import { geminiService, ExtractedItem, GeneratedRecipe, CommunityRecipeResult } from './services/geminiService';
 
 import { Button } from '@/components/ui/button';
@@ -94,13 +97,35 @@ interface FoodItem {
 
 // --- Components ---
 
-const AuthScreen = ({ onLogin }: { onLogin: () => void }) => {
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+// --- App User type (compatible with Firestore usage) ---
+interface AppUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  emailVerified: boolean;
+}
 
-  const handleLoginClick = async () => {
+const AuthScreen = ({ onLogin, onSignup }: { onLogin: (email: string, password: string) => Promise<void>; onSignup: (email: string, password: string, name: string) => Promise<void> }) => {
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isSignup, setIsSignup] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsLoggingIn(true);
+    setError('');
     try {
-      await onLogin();
+      if (isSignup) {
+        await onSignup(email, password, name);
+      } else {
+        await onLogin(email, password);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed. Please try again.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -108,7 +133,7 @@ const AuthScreen = ({ onLogin }: { onLogin: () => void }) => {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full text-center space-y-8"
@@ -122,14 +147,37 @@ const AuthScreen = ({ onLogin }: { onLogin: () => void }) => {
           <h1 className="text-4xl font-bold tracking-tight text-ink">Vegie365</h1>
           <p className="text-muted-foreground">Smart food tracking for a sustainable household.</p>
         </div>
-        <Button 
-          onClick={handleLoginClick}
-          disabled={isLoggingIn}
-          className="w-full h-12 text-lg bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl transition-all"
-        >
-          {isLoggingIn ? <RefreshCw className="w-5 h-5 animate-spin mr-2" /> : null}
-          {isLoggingIn ? 'Signing in...' : 'Sign in with Google'}
-        </Button>
+        <form onSubmit={handleSubmit} className="space-y-4 text-left">
+          {isSignup && (
+            <div>
+              <Label htmlFor="name">Full Name</Label>
+              <Input id="name" type="text" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required className="mt-1" />
+            </div>
+          )}
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="mt-1" />
+          </div>
+          <div>
+            <Label htmlFor="password">Password</Label>
+            <Input id="password" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mt-1" />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <Button
+            type="submit"
+            disabled={isLoggingIn}
+            className="w-full h-12 text-lg bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl transition-all"
+          >
+            {isLoggingIn ? <RefreshCw className="w-5 h-5 animate-spin mr-2" /> : null}
+            {isLoggingIn ? (isSignup ? 'Creating account...' : 'Signing in...') : (isSignup ? 'Create Account' : 'Sign In')}
+          </Button>
+        </form>
+        <p className="text-sm text-muted-foreground">
+          {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button onClick={() => { setIsSignup(!isSignup); setError(''); }} className="text-emerald-600 font-medium hover:underline">
+            {isSignup ? 'Sign in' : 'Sign up'}
+          </button>
+        </p>
       </motion.div>
     </div>
   );
@@ -145,7 +193,7 @@ const ExpiryBadge = ({ date }: { date: Date }) => {
 };
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [inventory, setInventory] = useState<FoodItem[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -189,11 +237,50 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Helper to convert Netlify Identity user to AppUser
+  const toAppUser = (niUser: any): AppUser | null => {
+    if (!niUser) return null;
+    return {
+      uid: niUser.id,
+      email: niUser.email ?? null,
+      displayName: niUser.name || niUser.email?.split('@')[0] || null,
+      photoURL: niUser.pictureUrl || null,
+      emailVerified: !!niUser.confirmedAt,
+    };
+  };
+
+  // Handle auth callback (for email confirmation) and initial session
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    (async () => {
+      try {
+        const result = await handleAuthCallback();
+        if (result && result.user) {
+          setUser(toAppUser(result.user));
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Auth callback error:', err);
+      }
+
+      // Check for existing session
+      try {
+        const existingUser = await netlifyGetUser();
+        setUser(toAppUser(existingUser));
+      } catch (err) {
+        console.error('Get user error:', err);
+      }
       setLoading(false);
+    })();
+
+    const unsubscribe = onAuthChange((event, niUser) => {
+      if (event === AUTH_EVENTS.LOGIN || event === AUTH_EVENTS.TOKEN_REFRESH || event === AUTH_EVENTS.USER_UPDATED) {
+        setUser(toAppUser(niUser));
+      } else if (event === AUTH_EVENTS.LOGOUT) {
+        setUser(null);
+      }
     });
+
     return unsubscribe;
   }, []);
 
@@ -269,24 +356,55 @@ export default function App() {
     return unsubscribe;
   }, [user]);
 
-  const handleLogin = async () => {
+  const handleLogin = async (email: string, password: string) => {
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const niUser = await netlifyLogin(email, password);
+      setUser(toAppUser(niUser));
       toast.success('Welcome to Vegie365!');
     } catch (error: any) {
       console.error(error);
-      if (error.code === 'auth/popup-blocked') {
-        toast.error('Sign-in popup was blocked. Please allow popups for this site and try again.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        // Ignore this as it's usually handled by the loading state
-      } else {
-        toast.error('Failed to sign in. Please try again.');
+      if (error instanceof AuthError) {
+        if (error.status === 401) {
+          throw new Error('Invalid email or password.');
+        }
+        throw new Error(error.message || 'Failed to sign in. Please try again.');
       }
+      throw new Error('Failed to sign in. Please try again.');
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleSignup = async (email: string, password: string, name: string) => {
+    try {
+      const niUser = await netlifySignup(email, password, { full_name: name });
+      if (niUser.confirmedAt) {
+        setUser(toAppUser(niUser));
+        toast.success('Account created. Welcome to Vegie365!');
+      } else {
+        toast.success('Check your email to confirm your account.');
+      }
+    } catch (error: any) {
+      console.error(error);
+      if (error instanceof AuthError) {
+        if (error.status === 403) {
+          throw new Error('Signups are not currently allowed.');
+        }
+        if (error.status === 422) {
+          throw new Error('Invalid input. Check your email and password (min 6 characters).');
+        }
+        throw new Error(error.message || 'Failed to sign up. Please try again.');
+      }
+      throw new Error('Failed to sign up. Please try again.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await netlifyLogout();
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   const handleRemoveAll = async () => {
     if (!user || inventory.length === 0) return;
@@ -589,7 +707,7 @@ export default function App() {
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-bg"><RefreshCw className="animate-spin text-accent" /></div>;
-  if (!user) return <AuthScreen onLogin={handleLogin} />;
+  if (!user) return <AuthScreen onLogin={handleLogin} onSignup={handleSignup} />;
 
   const filteredInventory = inventory
     .filter(item => {

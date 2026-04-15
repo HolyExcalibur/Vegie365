@@ -144,8 +144,10 @@ const AuthScreen = () => {
       console.error(error);
       if (error.code === 'auth/popup-blocked') {
         toast.error('Sign-in popup was blocked. Please allow popups for this site and try again.');
-      } else if (error.code !== 'auth/cancelled-popup-request') {
-        toast.error('Failed to sign in with Google.');
+      } else if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        toast.info('Sign-in was cancelled.');
+      } else {
+        toast.error('Failed to sign in with Google. ' + error.message);
       }
     } finally {
       setIsLoggingIn(false);
@@ -293,6 +295,7 @@ export default function App() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -792,6 +795,9 @@ export default function App() {
           <div className="text-muted-foreground text-[11px] hidden md:block">
             {inventory.length} Items Tracked &nbsp; | &nbsp; {user.email || 'Guest'}
           </div>
+          <Button variant="ghost" size="icon" onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)} className="lg:hidden h-8 w-8 text-muted-foreground hover:text-ink">
+            <ChefHat className="w-4 h-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={handleLogout} className="h-8 w-8 text-muted-foreground hover:text-ink">
             <LogOut className="w-4 h-4" />
           </Button>
@@ -808,6 +814,15 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/20 z-40 md:hidden"
               onClick={() => setIsSidebarOpen(false)}
+            />
+          )}
+          {isRightSidebarOpen && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/20 z-40 lg:hidden"
+              onClick={() => setIsRightSidebarOpen(false)}
             />
           )}
         </AnimatePresence>
@@ -1097,7 +1112,7 @@ export default function App() {
         </section>
 
             {/* Insight Panel */}
-            <aside className="hidden lg:flex border-l border-border bg-white flex-col h-full overflow-hidden">
+            <aside className={`absolute right-0 lg:relative z-50 w-[320px] h-full border-l border-border bg-white flex flex-col overflow-hidden transition-transform duration-300 ${isRightSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
               <div className="bg-ink text-white p-5 h-[180px] shrink-0">
                 <p className="section-label" style={{ color: '#e5e5e5' }}>Task Engine: Extraction</p>
                 <div className="console-line" style={{ color: '#e5e5e5' }}>&gt; Listening for input...</div>

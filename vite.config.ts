@@ -6,9 +6,12 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
+    // 1. THIS IS REQUIRED FOR GITHUB PAGES:
+    base: '/Vegie365/', 
+    
     plugins: [react(), tailwindcss()],
     define: {
-      // FIX: Tell Vite to grab the key directly from the Node process (GitHub Actions)
+      // 2. THIS IS REQUIRED TO INJECT THE API KEY FROM GITHUB ACTIONS:
       'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || env.GEMINI_API_KEY),
     },
     resolve: {
@@ -20,4 +23,4 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };
-
+});

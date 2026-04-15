@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Private user information and settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "FoodItem": {
+      "title": "Food Item",
+      "description": "An item in the user's food inventory.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "storageCondition": { "type": "string", "enum": ["fridge", "freezer", "pantry"] },
+        "quantity": { "type": "string" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["name", "category", "expiryDate", "storageCondition"]
+    },
+    "Recipe": {
+      "title": "Recipe",
+      "description": "A generated recipe based on inventory.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "priorityIngredients": { "type": "array", "items": { "type": "string" } },
+        "otherIngredients": { "type": "array", "items": { "type": "string" } },
+        "instructions": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "instructions"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile document."
+    },
+    "/users/{userId}/inventory/{itemId}": {
+      "schema": "FoodItem",
+      "description": "User's food inventory items."
+    },
+    "/users/{userId}/recipes/{recipeId}": {
+      "schema": "Recipe",
+      "description": "Saved or generated recipes for the user."
+    }
+  }
+}

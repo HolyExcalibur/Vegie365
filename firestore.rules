@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - createdAt: timestamp (optional)
+    //   - points: number (optional)
+    //
+    // Collection: /users/{userId}/inventory/{itemId}
+    // Fields:
+    //   - name: string (required, size < 100)
+    //   - category: string (required, size < 50)
+    //   - expiryDate: timestamp (required)
+    //   - addedAt: timestamp (required)
+    //   - storageCondition: string (required, enum: fridge, freezer, pantry)
+    //   - quantity: string (optional, size < 50)
+    //   - imageUrl: string (optional, url format)
+    //
+    // Collection: /users/{userId}/recipes/{recipeId}
+    // Fields:
+    //   - name: string (required, size < 200)
+    //   - priorityIngredients: list (required, strings)
+    //   - otherIngredients: list (required, strings)
+    //   - instructions: list (required, strings)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: /community_posts/{postId}
+    // Fields:
+    //   - userId: string (required)
+    //   - userEmail: string (required)
+    //   - title: string (required)
+    //   - description: string (required)
+    //   - tags: list (required)
+    //   - createdAt: timestamp (required)
+    //   - item_name: string (required)
+    //   - days_left: number (required)
+    //
+    // Collection: /leaderboard/{userId}
+    // Fields:
+    //   - displayName: string (required)
+    //   - points: number (required)
+    //   - updatedAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "gamerfiend.jr@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('points' in data) || data.points is number) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidFoodItem(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.category is string && data.category.size() < 50 &&
+             data.expiryDate is timestamp &&
+             data.storageCondition in ['fridge', 'freezer', 'pantry'] &&
+             (!('imageUrl' in data) || (isValidUrl(data.imageUrl) && data.imageUrl.size() < 500)) &&
+             (!('quantity' in data) || (data.quantity is string && data.quantity.size() < 50)) &&
+             (!('addedAt' in data) || data.addedAt is timestamp);
+    }
+
+    function isValidRecipe(data) {
+      return data.name is string && data.name.size() < 200 &&
+             data.priorityIngredients is list && data.priorityIngredients.size() < 50 &&
+             data.otherIngredients is list && data.otherIngredients.size() < 50 &&
+             data.instructions is list && data.instructions.size() < 50 &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidCommunityPost(data) {
+      return data.userId == request.auth.uid &&
+             data.userEmail is string && isValidEmail(data.userEmail) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.description is string && data.description.size() < 2000 &&
+             data.tags is list && data.tags.size() < 20 &&
+             data.createdAt is timestamp &&
+             data.item_name is string && data.item_name.size() < 100 &&
+             data.days_left is number;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.displayName is string && data.displayName.size() < 100 &&
+             data.points is number &&
+             data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    request.resource.data.uid == resource.data.uid;
+      
+      match /inventory/{itemId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidFoodItem(request.resource.data);
+        allow update: if isOwner(userId) && isValidFoodItem(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /recipes/{recipeId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidRecipe(request.resource.data);
+        allow update: if isOwner(userId) && isValidRecipe(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /community_posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCommunityPost(request.resource.data);
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /leaderboard/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isValidLeaderboardEntry(request.resource.data);
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

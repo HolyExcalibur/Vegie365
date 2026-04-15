@@ -1,0 +1,6 @@
+{
+  "name": "Vegie365",
+  "description": "Smart household food tracking with AI extraction, shelf-life prediction, and recipe generation.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
